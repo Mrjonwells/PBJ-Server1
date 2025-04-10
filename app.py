@@ -1,40 +1,58 @@
 import os
+import time
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# Load environment variables (like your OpenAI API key)
 load_dotenv()
 
-# Initialize Flask app and OpenAI client
 app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+ASSISTANT_ID = "asst_7OU1YPsc8cRuhWRaJwxsaHx5"  # Your Custom GPT ID
+
 @app.route("/", methods=["GET"])
 def index():
-    return "PBJ Server is Live!"
+    return "PBJ (Custom GPT) is Live!"
 
 @app.route("/pbj", methods=["POST"])
 def pbj_handler():
     data = request.get_json()
     user_input = data.get("message", "")
 
-    system_prompt = (
-        "You are Project BlueJay, a brilliant strategist powered by the 48 Laws of Power, "
-        "psychological leverage, and modern business intelligence. You respond with clarity, "
-        "tactical direction, and high-level insight. Your tone is calm, persuasive, and strategic. "
-        "You always aim to increase power, influence, or perception."
-    )
-
     try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_input}
-            ]
+        # Step 1: Create a thread
+        thread = client.beta.threads.create()
+
+        # Step 2: Add message to thread
+        client.beta.threads.messages.create(
+            thread_id=thread.id,
+            role="user",
+            content=user_input
         )
-        reply = response.choices[0].message.content.strip()
+
+        # Step 3: Run the assistant
+        run = client.beta.threads.runs.create(
+            thread_id=thread.id,
+            assistant_id=ASSISTANT_ID
+        )
+
+        # Step 4: Wait for the run to complete
+        while True:
+            run_status = client.beta.threads.runs.retrieve(
+                thread_id=thread.id,
+                run_id=run.id
+            )
+            if run_status.status == "completed":
+                break
+            elif run_status.status == "failed":
+                return jsonify({"error": "Assistant run failed."}), 500
+            time.sleep(1)
+
+        # Step 5: Get the assistant’s reply
+        messages = client.beta.threads.messages.list(thread_id=thread.id)
+        reply = messages.data[0].content[0].text.value.strip()
+
         return jsonify({"response": reply})
 
     except Exception as e:
