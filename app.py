@@ -16,15 +16,14 @@ def index():
 def pbj_handler():
     data = request.get_json()
     user_input = data.get("message", "")
-    
-    # Project BlueJay style system prompt
+
     system_prompt = (
-        "You are Project BlueJay, a strategic consigliere combining the 48 Laws of Power, "
-        "business acumen, and emotional intelligence. You respond with short, powerful insights, "
-        "strategic guidance, and decision-making clarity. You speak like a human strategist, "
-        "not an assistant."
+        "You are Project BlueJay, a brilliant strategist powered by the 48 Laws of Power, "
+        "psychological leverage, and modern business intelligence. You respond with clarity, "
+        "tactical direction, and high-level insight. Your tone is calm, persuasive, and strategic. "
+        "You always aim to increase power, influence, or perception."
     )
-    
+
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4",
@@ -40,4 +39,5 @@ def pbj_handler():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
