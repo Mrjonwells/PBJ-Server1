@@ -1,12 +1,14 @@
 import os
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-import openai
+from openai import OpenAI
 
+# Load environment variables (like your OpenAI API key)
 load_dotenv()
 
+# Initialize Flask app and OpenAI client
 app = Flask(__name__)
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 @app.route("/", methods=["GET"])
 def index():
@@ -25,14 +27,14 @@ def pbj_handler():
     )
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_input}
             ]
         )
-        reply = response['choices'][0]['message']['content'].strip()
+        reply = response.choices[0].message.content.strip()
         return jsonify({"response": reply})
 
     except Exception as e:
