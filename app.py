@@ -6,7 +6,7 @@ import time
 
 app = Flask(__name__)
 CORS(app)
-app.secret_key = 'super-secret-key'
+app.secret_key = 'super-secret-key'  # Required for session handling
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 assistant_id = "asst_7OU1YPsc8cRuhWRaJwxsaHx5"
@@ -19,14 +19,14 @@ def chat():
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
-    # Create a thread for the user if not already in session
+    # Initialize a new thread if one doesn't exist for this session
     if 'thread_id' not in session:
         thread = client.beta.threads.create()
         session['thread_id'] = thread.id
 
     thread_id = session['thread_id']
 
-    # Add message to thread
+    # Add user message to thread
     client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
@@ -39,8 +39,8 @@ def chat():
         assistant_id=assistant_id
     )
 
-    # Poll until complete
-    while True:
+    # Poll the run until completion (with faster polling)
+    for _ in range(40):  # max wait: 40 * 0.3s = 12 seconds
         run_status = client.beta.threads.runs.retrieve(
             thread_id=thread_id,
             run_id=run.id
@@ -49,9 +49,11 @@ def chat():
             break
         elif run_status.status == "failed":
             return jsonify({"error": "Assistant run failed"}), 500
-        time.sleep(1)
+        time.sleep(0.3)
+    else:
+        return jsonify({"error": "Timeout waiting for assistant response"}), 504
 
-    # Get assistant response
+    # Retrieve and return the assistant's reply
     messages = client.beta.threads.messages.list(thread_id=thread_id)
     latest = messages.data[0].content[0].text.value
 
