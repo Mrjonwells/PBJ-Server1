@@ -79,9 +79,9 @@ def chat():
     messages = client.beta.threads.messages.list(thread_id=thread_id).data
     latest = messages[0].content[0].text.value
 
-    # Extract and log HubSpot fields
-    fields = extract_fields(latest)
-    print(f"[HubSpot] Fields extracted: {fields}")
+    # Extract directly from user's message
+    fields = extract_fields(user_message)
+    print(f"[HubSpot] Fields extracted from user input: {fields}")
 
     if "email" in fields and "firstname" in fields and thread_id not in submitted_threads:
         try:
@@ -100,4 +100,4 @@ def chat():
 
 @app.route('/')
 def home():
-    return "BlueJay backend with HubSpot debugging is live!"
+    return "BlueJay backend v1.3 — extracting from user input is live!"
