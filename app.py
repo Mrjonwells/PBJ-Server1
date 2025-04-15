@@ -1,18 +1,15 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, stream_with_context, Response
 from flask_cors import CORS
 from openai import OpenAI
 import os
 import time
-import requests
+import json
 
 app = Flask(__name__)
 CORS(app)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 assistant_id = "asst_7OU1YPsc8cRuhWRaJwxsaHx5"
-
-# Optional: if you still want to post to HubSpot later
-HUBSPOT_FORM_URL = "https://forms.hubspot.com/uploads/form/v2/45853776/8f77cd97-b1a7-416f-9701-bf6de899e020"
 
 @app.route('/pbj', methods=['POST'])
 def chat():
@@ -23,46 +20,34 @@ def chat():
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
-    # Use existing thread_id or create a new one
+    # Use existing thread or create new
     if incoming_thread_id:
         thread_id = incoming_thread_id
     else:
         thread = client.beta.threads.create()
         thread_id = thread.id
 
-    # Send message to the thread
+    # Add user message
     client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
         content=user_message
     )
 
-    # Run the assistant
+    # Start the run
     run = client.beta.threads.runs.create(
         thread_id=thread_id,
-        assistant_id=assistant_id
+        assistant_id=assistant_id,
+        stream=True  # Turn on streaming
     )
 
-    # Wait for completion
-    for _ in range(40):
-        run_status = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
-        if run_status.status == "completed":
-            break
-        elif run_status.status == "failed":
-            return jsonify({"error": "Assistant run failed"}), 500
-        time.sleep(0.3)
-    else:
-        return jsonify({"error": "Timeout waiting for assistant response"}), 504
+    def stream():
+        full_response = ""
+        for chunk in run:
+            if hasattr(chunk, "delta") and hasattr(chunk.delta, "content"):
+                token = chunk.delta.content or ""
+                full_response += token
+                yield f"data: {token}\n\n"
+        yield f"data: <END>|{thread_id}\n\n"
 
-    # Get the assistant response
-    messages = client.beta.threads.messages.list(thread_id=thread_id).data
-    latest = messages[0].content[0].text.value
-
-    return jsonify({
-        "response": latest,
-        "thread_id": thread_id
-    })
-
-@app.route('/')
-def home():
-    return "BlueJay API is running!"
+    return Response(stream_with_context(stream()), mimetype="text/event-stream")
