@@ -14,10 +14,10 @@ assistant_id = "asst_7OU1YPsc8cRuhWRaJwxsaHx5"
 
 HUBSPOT_FORM_URL = "https://forms.hubspot.com/uploads/form/v2/45853776/8f77cd97-b1a7-416f-9701-bf6de899e020"
 
-# Temporary per-session tracking (you can replace this with a DB later)
+# This would normally store submissions per session
 thread_leads = {}
 
-# Fields we want to match against BlueJay’s response
+# List of fields we expect
 HUBSPOT_FIELDS = [
     "firstname",
     "lastname",
@@ -57,18 +57,21 @@ def chat():
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
-    if incoming_thread_id:
-        thread_id = incoming_thread_id
-    else:
-        thread = client.beta.threads.create()
-        thread_id = thread.id
+    # FORCE NEW THREAD to rule out ID errors
+    thread = client.beta.threads.create()
+    thread_id = thread.id
 
+    print("Using assistant:", assistant_id)
+    print("New thread ID:", thread_id)
+
+    # Add user message to thread
     client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
         content=user_message
     )
 
+    # Create a streaming run
     run = client.beta.threads.runs.create(
         thread_id=thread_id,
         assistant_id=assistant_id,
@@ -84,16 +87,18 @@ def chat():
                 yield f"data: {token}\n\n"
         yield f"data: <END>|{thread_id}\n\n"
 
-        # Extract fields and send to HubSpot
-        collected = extract_fields(full_response)
-        if "email" in collected and "firstname" in collected:
-            if thread_id not in thread_leads:
-                status = send_to_hubspot(collected)
-                thread_leads[thread_id] = True
-                print(f"HubSpot lead sent (status {status})")
+        print("Full Assistant Response:\n", full_response)
+
+        # Optional: Submit to HubSpot (disabled for now)
+        # collected = extract_fields(full_response)
+        # if "email" in collected and "firstname" in collected:
+        #     if thread_id not in thread_leads:
+        #         status = send_to_hubspot(collected)
+        #         thread_leads[thread_id] = True
+        #         print(f"HubSpot lead sent (status {status})")
 
     return Response(stream_with_context(stream()), mimetype="text/event-stream")
 
 @app.route('/')
 def home():
-    return "BlueJay backend is running!"
+    return "BlueJay backend is live."
