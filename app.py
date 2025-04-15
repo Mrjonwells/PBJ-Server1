@@ -4,6 +4,7 @@ from openai import OpenAI
 import os
 import time
 import requests
+import re
 
 app = Flask(__name__)
 CORS(app)
@@ -14,27 +15,38 @@ assistant_id = "asst_7OU1YPsc8cRuhWRaJwxsaHx5"
 HUBSPOT_FORM_URL = "https://forms.hubspot.com/uploads/form/v2/45853776/8f77cd97-b1a7-416f-9701-bf6de899e020"
 submitted_threads = {}
 
-STANDARD_FIELDS = ["firstname", "lastname", "email", "phone"]
-
 def extract_fields(text):
-    structured = {}
-    extras = []
-    for line in text.splitlines():
-        if ":" in line:
-            key, value = line.split(":", 1)
-            clean_key = key.strip().lower().replace(" ", "_")
-            clean_value = value.strip()
-            if clean_key in STANDARD_FIELDS:
-                structured[clean_key] = clean_value
-            else:
-                extras.append(f"{key.strip()}: {clean_value}")
-    if extras:
-        structured["notes"] = "\n".join(extras)
-    return structured
+    data = {}
+
+    # Email
+    email_match = re.search(r"[\w\.-]+@[\w\.-]+\.\w+", text)
+    if email_match:
+        data["email"] = email_match.group(0)
+
+    # Phone (US format)
+    phone_match = re.search(r"(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})", text)
+    if phone_match:
+        data["phone"] = phone_match.group(0)
+
+    # First and Last Name
+    name_match = re.search(r"(?:my name is|this is|I am)\s+([A-Z][a-z]+)\s+([A-Z][a-z]+)", text, re.IGNORECASE)
+    if name_match:
+        data["firstname"] = name_match.group(1)
+        data["lastname"] = name_match.group(2)
+
+    # Build notes from original message
+    data["notes"] = text.strip()
+
+    return data
 
 def send_to_hubspot(data):
-    payload = {field: data.get(field, "") for field in STANDARD_FIELDS}
-    payload["notes"] = data.get("notes", "")
+    payload = {
+        "firstname": data.get("firstname", ""),
+        "lastname": data.get("lastname", ""),
+        "email": data.get("email", ""),
+        "phone": data.get("phone", ""),
+        "notes": data.get("notes", "")
+    }
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     return requests.post(HUBSPOT_FORM_URL, data=payload, headers=headers).status_code
 
@@ -73,8 +85,9 @@ def chat():
     messages = client.beta.threads.messages.list(thread_id=thread_id).data
     latest = messages[0].content[0].text.value
 
+    # Extract from casual sentence format
     fields = extract_fields(user_message)
-    print(f"[HubSpot] Fields extracted from user input: {fields}")
+    print(f"[HubSpot] Fields extracted from natural input: {fields}")
 
     if "email" in fields and "firstname" in fields and thread_id not in submitted_threads:
         try:
@@ -93,4 +106,4 @@ def chat():
 
 @app.route('/')
 def home():
-    return "BlueJay backend v1.4 — Standard HubSpot fields with bundled notes active."
+    return "BlueJay backend v1.5 — Natural input parser with smart HubSpot sync."
