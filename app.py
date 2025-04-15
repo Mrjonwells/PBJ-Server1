@@ -23,20 +23,24 @@ def extract_fields(text):
     if email_match:
         data["email"] = email_match.group(0)
 
-    # Phone (US format)
+    # Phone (US)
     phone_match = re.search(r"(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})", text)
     if phone_match:
         data["phone"] = phone_match.group(0)
 
-    # First and Last Name
-    name_match = re.search(r"(?:my name is|this is|I am)\s+([A-Z][a-z]+)\s+([A-Z][a-z]+)", text, re.IGNORECASE)
-    if name_match:
-        data["firstname"] = name_match.group(1)
-        data["lastname"] = name_match.group(2)
+    # Name detection (improved for multiple intro styles)
+    name_patterns = [
+        r"(?:my name is|this is|i am|i’m|it's|it is|hey[, ]*this is|hey[, ]*i'?m)\s+([A-Z][a-z]+)\s+([A-Z][a-z]+)",  # "My name is Jordan Lee"
+        r"\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\s+(from|at)\b"  # "Jordan Lee from Mint Mocha"
+    ]
+    for pattern in name_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            data["firstname"] = match.group(1)
+            data["lastname"] = match.group(2)
+            break
 
-    # Build notes from original message
     data["notes"] = text.strip()
-
     return data
 
 def send_to_hubspot(data):
@@ -85,7 +89,6 @@ def chat():
     messages = client.beta.threads.messages.list(thread_id=thread_id).data
     latest = messages[0].content[0].text.value
 
-    # Extract from casual sentence format
     fields = extract_fields(user_message)
     print(f"[HubSpot] Fields extracted from natural input: {fields}")
 
@@ -106,4 +109,4 @@ def chat():
 
 @app.route('/')
 def home():
-    return "BlueJay backend v1.5 — Natural input parser with smart HubSpot sync."
+    return "BlueJay backend v1.6 — Enhanced natural language extraction + HubSpot sync"
