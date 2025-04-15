@@ -14,35 +14,29 @@ assistant_id = "asst_7OU1YPsc8cRuhWRaJwxsaHx5"
 HUBSPOT_FORM_URL = "https://forms.hubspot.com/uploads/form/v2/45853776/8f77cd97-b1a7-416f-9701-bf6de899e020"
 submitted_threads = {}
 
-HUBSPOT_FIELDS = [
-    "firstname",
-    "lastname",
-    "email",
-    "phone",
-    "business_name",
-    "business_type",
-    "how_would_you_like_to_be_contacted_",
-    "notes",
-    "website",
-    "monthly_card_sales",
-    "average_ticket_size"
-]
+STANDARD_FIELDS = ["firstname", "lastname", "email", "phone"]
 
 def extract_fields(text):
-    data = {}
+    structured = {}
+    extras = []
     for line in text.splitlines():
         if ":" in line:
             key, value = line.split(":", 1)
             clean_key = key.strip().lower().replace(" ", "_")
-            if clean_key in HUBSPOT_FIELDS:
-                data[clean_key] = value.strip()
-    return data
+            clean_value = value.strip()
+            if clean_key in STANDARD_FIELDS:
+                structured[clean_key] = clean_value
+            else:
+                extras.append(f"{key.strip()}: {clean_value}")
+    if extras:
+        structured["notes"] = "\n".join(extras)
+    return structured
 
 def send_to_hubspot(data):
-    payload = {field: data.get(field, "") for field in HUBSPOT_FIELDS}
+    payload = {field: data.get(field, "") for field in STANDARD_FIELDS}
+    payload["notes"] = data.get("notes", "")
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    res = requests.post(HUBSPOT_FORM_URL, data=payload, headers=headers)
-    return res.status_code
+    return requests.post(HUBSPOT_FORM_URL, data=payload, headers=headers).status_code
 
 @app.route('/pbj', methods=['POST'])
 def chat():
@@ -79,7 +73,6 @@ def chat():
     messages = client.beta.threads.messages.list(thread_id=thread_id).data
     latest = messages[0].content[0].text.value
 
-    # Extract directly from user's message
     fields = extract_fields(user_message)
     print(f"[HubSpot] Fields extracted from user input: {fields}")
 
@@ -100,4 +93,4 @@ def chat():
 
 @app.route('/')
 def home():
-    return "BlueJay backend v1.3 — extracting from user input is live!"
+    return "BlueJay backend v1.4 — Standard HubSpot fields with bundled notes active."
