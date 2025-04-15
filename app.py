@@ -1,52 +1,14 @@
-from flask import Flask, request, jsonify, stream_with_context, Response
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from openai import OpenAI
 import os
 import time
-import json
-import requests
 
 app = Flask(__name__)
 CORS(app)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 assistant_id = "asst_7OU1YPsc8cRuhWRaJwxsaHx5"
-
-HUBSPOT_FORM_URL = "https://forms.hubspot.com/uploads/form/v2/45853776/8f77cd97-b1a7-416f-9701-bf6de899e020"
-
-# This would normally store submissions per session
-thread_leads = {}
-
-# List of fields we expect
-HUBSPOT_FIELDS = [
-    "firstname",
-    "lastname",
-    "email",
-    "phone",
-    "business_name",
-    "business_type",
-    "how_would_you_like_to_be_contacted_",
-    "notes",
-    "website",
-    "monthly_card_sales",
-    "average_ticket_size"
-]
-
-def extract_fields(text):
-    found = {}
-    for line in text.splitlines():
-        if ":" in line:
-            key, value = line.split(":", 1)
-            clean_key = key.strip().lower().replace(" ", "_")
-            if clean_key in HUBSPOT_FIELDS:
-                found[clean_key] = value.strip()
-    return found
-
-def send_to_hubspot(data):
-    payload = {field: data.get(field, "") for field in HUBSPOT_FIELDS}
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    res = requests.post(HUBSPOT_FORM_URL, data=payload, headers=headers)
-    return res.status_code
 
 @app.route('/pbj', methods=['POST'])
 def chat():
@@ -57,48 +19,46 @@ def chat():
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
-    # FORCE NEW THREAD to rule out ID errors
-    thread = client.beta.threads.create()
-    thread_id = thread.id
+    # Use existing thread or create a new one
+    if incoming_thread_id:
+        thread_id = incoming_thread_id
+    else:
+        thread = client.beta.threads.create()
+        thread_id = thread.id
 
-    print("Using assistant:", assistant_id)
-    print("New thread ID:", thread_id)
-
-    # Add user message to thread
+    # Send message to thread
     client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
         content=user_message
     )
 
-    # Create a streaming run
+    # Run the assistant
     run = client.beta.threads.runs.create(
         thread_id=thread_id,
-        assistant_id=assistant_id,
-        stream=True
+        assistant_id=assistant_id
     )
 
-    def stream():
-        full_response = ""
-        for chunk in run:
-            if hasattr(chunk, "delta") and hasattr(chunk.delta, "content"):
-                token = chunk.delta.content or ""
-                full_response += token
-                yield f"data: {token}\n\n"
-        yield f"data: <END>|{thread_id}\n\n"
+    # Wait for the run to complete
+    for _ in range(40):
+        status = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+        if status.status == "completed":
+            break
+        elif status.status == "failed":
+            return jsonify({"error": "Assistant run failed"}), 500
+        time.sleep(0.3)
+    else:
+        return jsonify({"error": "Timeout waiting for assistant response"}), 504
 
-        print("Full Assistant Response:\n", full_response)
+    # Get the latest message
+    messages = client.beta.threads.messages.list(thread_id=thread_id).data
+    latest = messages[0].content[0].text.value
 
-        # Optional: Submit to HubSpot (disabled for now)
-        # collected = extract_fields(full_response)
-        # if "email" in collected and "firstname" in collected:
-        #     if thread_id not in thread_leads:
-        #         status = send_to_hubspot(collected)
-        #         thread_leads[thread_id] = True
-        #         print(f"HubSpot lead sent (status {status})")
-
-    return Response(stream_with_context(stream()), mimetype="text/event-stream")
+    return jsonify({
+        "response": latest,
+        "thread_id": thread_id
+    })
 
 @app.route('/')
 def home():
-    return "BlueJay backend is live."
+    return "BlueJay backend is live!"
