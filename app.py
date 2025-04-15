@@ -1,55 +1,67 @@
 import os
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from openai import OpenAI
 from dotenv import load_dotenv
+import requests
+import re
 
 load_dotenv()
 
-app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Use your Assistant ID here
-ASSISTANT_ID = "asst_7OU1YPsc8cRuhWRaJwxsaHx5"
+app = Flask(__name__)
+CORS(app)
+
+assistant_id = os.getenv("ASSISTANT_ID")
 
 @app.route("/pbj", methods=["POST"])
 def chat():
-    user_message = request.json.get("message", "")
-    if not user_message:
-        return jsonify({"error": "No message provided"}), 400
+    data = request.json
+    user_input = data.get("message", "")
+    print(f"[User Input] {user_input}")
+
+    if not user_input:
+        return jsonify({"error": "No message received"}), 400
 
     try:
-        # Create a thread and send the message
+        # Step 1: Create a thread
         thread = client.beta.threads.create()
+
+        # Step 2: Add message to the thread
         client.beta.threads.messages.create(
             thread_id=thread.id,
             role="user",
-            content=user_message
+            content=user_input
         )
 
-        # Run the assistant
+        # Step 3: Run the assistant
         run = client.beta.threads.runs.create(
             thread_id=thread.id,
-            assistant_id=ASSISTANT_ID
+            assistant_id=assistant_id
         )
 
-        # Wait for it to complete (polling)
-        import time
-        while run.status not in ["completed", "failed"]:
-            time.sleep(1)
-            run = client.beta.threads.runs.retrieve(
+        # Step 4: Poll until complete
+        while True:
+            run_status = client.beta.threads.runs.retrieve(
                 thread_id=thread.id,
                 run_id=run.id
             )
+            if run_status.status == "completed":
+                break
+            elif run_status.status == "failed":
+                return jsonify({"error": "Assistant run failed"}), 500
 
-        if run.status == "completed":
-            messages = client.beta.threads.messages.list(thread_id=thread.id)
-            last_message = messages.data[0].content[0].text.value
-            return jsonify({"response": last_message})
-        else:
-            return jsonify({"error": "Assistant run failed."}), 500
+        # Step 5: Get the messages
+        messages = client.beta.threads.messages.list(thread_id=thread.id)
+        response_text = messages.data[0].content[0].text.value
+
+        return jsonify({"response": response_text})
 
     except Exception as e:
+        print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True)
