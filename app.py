@@ -12,7 +12,6 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 assistant_id = "asst_7OU1YPsc8cRuhWRaJwxsaHx5"
 
 HUBSPOT_FORM_URL = "https://forms.hubspot.com/uploads/form/v2/45853776/8f77cd97-b1a7-416f-9701-bf6de899e020"
-
 submitted_threads = {}
 
 HUBSPOT_FIELDS = [
@@ -54,11 +53,7 @@ def chat():
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
-    if incoming_thread_id:
-        thread_id = incoming_thread_id
-    else:
-        thread = client.beta.threads.create()
-        thread_id = thread.id
+    thread_id = incoming_thread_id or client.beta.threads.create().id
 
     client.beta.threads.messages.create(
         thread_id=thread_id,
@@ -84,15 +79,19 @@ def chat():
     messages = client.beta.threads.messages.list(thread_id=thread_id).data
     latest = messages[0].content[0].text.value
 
-    # HubSpot integration
+    # Extract and log HubSpot fields
     fields = extract_fields(latest)
+    print(f"[HubSpot] Fields extracted: {fields}")
+
     if "email" in fields and "firstname" in fields and thread_id not in submitted_threads:
         try:
             status = send_to_hubspot(fields)
             submitted_threads[thread_id] = True
             print(f"[HubSpot] Lead submitted: Status {status}")
         except Exception as e:
-            print("[HubSpot] Submission failed:", str(e))
+            print(f"[HubSpot] Submission failed: {str(e)}")
+    else:
+        print("[HubSpot] Skipping submission: Missing required fields or already submitted.")
 
     return jsonify({
         "response": latest,
@@ -101,4 +100,4 @@ def chat():
 
 @app.route('/')
 def home():
-    return "BlueJay backend with HubSpot integration is live!"
+    return "BlueJay backend with HubSpot debugging is live!"
